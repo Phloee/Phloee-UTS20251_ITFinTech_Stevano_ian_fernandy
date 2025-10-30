@@ -2,6 +2,7 @@ import Checkout from "../../models/Checkout"; // Ganti path sesuai struktur fina
 import Payment from "../../models/Payment";
 import dbConnect from "../../libs/mongodb";
 import mongoose from "mongoose";
+import { sendOtpViaFonnte } from "../../libs/fonnte";
 
 // Mendefinisikan type untuk Body Webhook Xendit yang diperlukan
 type XenditWebhookUpdateBody = {
@@ -45,6 +46,38 @@ export async function updatePaymentAndCheckout(
     console.log(
       `✅ Webhook Success: Payment ${external_id} and Checkout ${payment.checkoutId} updated to ${status}`
     );
+
+    // --- WhatsApp Confirmation via Fonnte ---
+    // Get checkout for customer info
+    const checkout = await Checkout.findById(payment.checkoutId);
+    if (checkout) {
+      const phone = checkout.customerInfo.phone;
+      const amount = payment.amount;
+      const orderId = checkout._id;
+      // Format currency (IDR)
+      const formatRupiah = (num: number) => "Rp " + num.toLocaleString("id-ID");
+      const message = `✅ Payment Successful!
+
+Thank you for your purchase! 🎉
+
+💰 Amount Paid: ${formatRupiah(amount)}
+🆔 Order ID: ${orderId}
+
+✅ Your payment has been confirmed.
+📦 Your order is being processed.
+
+We'll contact you soon for delivery details!
+
+— SamShop Team
+
+> Sent via fonnte.com`;
+      try {
+        await sendOtpViaFonnte(phone, message);
+        console.log("✅ WhatsApp confirmation sent via Fonnte");
+      } catch (err) {
+        console.error("❌ Failed to send WhatsApp confirmation:", err);
+      }
+    }
   } else {
     console.log(`Webhook Ignored: Payment ${external_id} already updated.`);
   }

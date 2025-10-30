@@ -19,8 +19,15 @@ export default function PaymentSuccess() {
         status: "PAID",
         timestamp: new Date().toISOString(),
       });
+
+      // Auto redirect after 2 seconds
+      const timer = setTimeout(() => {
+        router.push("/select-items");
+      }, 2000);
+
+      return () => clearTimeout(timer);
     }
-  }, [external_id]);
+  }, [external_id, router]);
 
   const goBackToStore = () => {
     router.push("/select-items");
@@ -74,7 +81,10 @@ export default function PaymentSuccess() {
             </button>
 
             <p className="text-sm text-gray-500">
-              You will receive an email confirmation shortly.
+              You will receive a WhatsApp confirmation shortly.
+            </p>
+            <p className="text-sm text-gray-500">
+              Redirecting to store in 2 seconds...
             </p>
           </div>
         </div>

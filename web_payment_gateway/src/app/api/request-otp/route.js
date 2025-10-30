@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import dbConnect from "../../libs/mongodb";
 import User from "../../models/User";
+import { sendOtpViaFonnte } from "../../libs/fonnte";
 
 export async function POST(request) {
   try {
@@ -33,21 +34,11 @@ export async function POST(request) {
     user.otpExpires = otpExpires;
     await user.save();
 
-    // Kirim SMS via Fonnte
-    const response = await fetch("https://api.fonnte.com/send", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: process.env.FONNTE_API_KEY, // ← token kamu
-      },
-      body: new URLSearchParams({
-        target: nomor,
-        message: `Kode OTP Anda: ${otp}`,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("Fonnte error:", await response.text());
+    // Kirim OTP via helper Fonnte
+    try {
+      await sendOtpViaFonnte(nomor, otp);
+    } catch (err) {
+      console.error("Fonnte send error:", err);
       return NextResponse.json(
         { message: "Gagal kirim OTP." },
         { status: 500 }

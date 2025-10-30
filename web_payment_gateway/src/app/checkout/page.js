@@ -72,6 +72,7 @@ export default function Checkout() {
   const router = useRouter();
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -80,12 +81,41 @@ export default function Checkout() {
   });
   const [errors, setErrors] = useState({});
 
+  // ✅ Cek login dan load data user
   useEffect(() => {
+    setIsClient(true);
+
+    // Cek apakah user sudah login
+    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+    if (!isLoggedIn) {
+      router.push("/login");
+      return;
+    }
+
+    // Load cart
     const cartData = getCartFromStorage();
     setCart(cartData);
 
+    // Jika cart kosong, redirect ke select-items
     if (cartData.length === 0) {
       router.push("/select-items");
+      return;
+    }
+
+    // ✅ Pre-fill form dengan data user dari localStorage
+    const userData = localStorage.getItem("user");
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        setFormData({
+          name: user.name || "",
+          email: user.email || "",
+          phone: user.whatsapp || "",
+          address: "",
+        });
+      } catch (error) {
+        console.error("Error parsing user data:", error);
+      }
     }
   }, [router]);
 
@@ -123,6 +153,11 @@ export default function Checkout() {
     const updatedCart = cart.filter((item) => item._id !== productId);
     setCart(updatedCart);
     saveCartToStorage(updatedCart);
+
+    // Jika cart kosong setelah hapus, redirect ke select-items
+    if (updatedCart.length === 0) {
+      router.push("/select-items");
+    }
   };
 
   const calculateTotals = () => {
@@ -201,7 +236,8 @@ export default function Checkout() {
     }
   };
 
-  if (cart.length === 0) {
+  // Jangan render sebelum client-side check selesai
+  if (!isClient || cart.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>

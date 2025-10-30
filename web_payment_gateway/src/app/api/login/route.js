@@ -1,276 +1,96 @@
-"use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+import dbConnect from "../../libs/mongodb";
+import User from "../../models/User";
+import { sendOtpViaFonnte } from "../../libs/fonnte";
 
-export default function LoginPage() {
-  const router = useRouter();
-  const [step, setStep] = useState(1); // 1 = email/password, 2 = OTP
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [otp, setOtp] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+// POST /api/login
+export async function POST(request) {
+  try {
+    await dbConnect();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    setSuccess("");
+    const body = await request.json();
+    const { email, password } = body || {};
 
-    try {
-      if (step === 1) {
-        // Step 1: Login dengan email + password
-        console.log("🔐 Logging in with:", { email });
-
-        const res = await fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-
-        const data = await res.json();
-        console.log("📥 Login response:", data);
-
-        if (res.ok) {
-          if (data.requiresMfa) {
-            setSuccess("✅ OTP telah dikirim ke nomor WhatsApp Anda.");
-            setStep(2); // Pindah ke step verifikasi OTP
-          } else {
-            // Langsung redirect jika tidak butuh MFA
-            setSuccess("✅ Login berhasil! Mengalihkan...");
-
-            // ✅ Simpan user data ke localStorage
-            if (data.user) {
-              localStorage.setItem("user", JSON.stringify(data.user));
-            }
-
-            setTimeout(() => router.push("/select-item"), 1000);
-          }
-        } else {
-          setError(
-            data.message || "Login gagal. Periksa email dan password Anda."
-          );
-        }
-      } else {
-        // Step 2: Verifikasi OTP
-        console.log("🔢 Verifying OTP:", { email, otp });
-
-        const res = await fetch("/api/verify-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, otp }), // ✅ Kirim email dan OTP
-        });
-
-        const data = await res.json();
-        console.log("📥 Verify response:", data);
-
-        if (res.ok && data.success) {
-          setSuccess("✅ Verifikasi berhasil! Mengalihkan...");
-
-          // ✅ Simpan user data ke localStorage
-          if (data.user) {
-            localStorage.setItem("user", JSON.stringify(data.user));
-          }
-
-          setTimeout(() => router.push("/select-item"), 1000);
-        } else {
-          setError(
-            data.message || "OTP salah atau kadaluarsa. Silakan coba lagi."
-          );
-        }
-      }
-    } catch (err) {
-      console.error("❌ Error:", err);
-      setError("Terjadi kesalahan jaringan. Silakan coba lagi.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendOTP = async () => {
     if (!email) {
-      setError("Email tidak ditemukan. Silakan login ulang.");
-      return;
+      return NextResponse.json(
+        { message: "Email harus diisi." },
+        { status: 400 }
+      );
     }
 
-    setLoading(true);
-    setError("");
-    setSuccess("");
+    // password field is stored with select: false in the schema, so include it explicitly
+    const user = await User.findOne({ email }).select("+password");
+    if (!user) {
+      return NextResponse.json(
+        { message: "User tidak ditemukan." },
+        { status: 404 }
+      );
+    }
 
-    try {
-      // Kirim ulang request ke /api/login untuk generate OTP baru
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.requiresMfa) {
-        setSuccess("✅ OTP baru telah dikirim ke nomor WhatsApp Anda.");
-        setOtp(""); // Clear OTP input
-      } else {
-        setError("Gagal mengirim OTP baru. Silakan login ulang.");
+    // Jika password diberikan (login awal / cek ulang), periksa password
+    if (password) {
+      const match = await bcrypt.compare(password, user.password || "");
+      if (!match) {
+        return NextResponse.json(
+          { message: "Email atau password salah." },
+          { status: 401 }
+        );
       }
-    } catch (err) {
-      setError("Gagal mengirim OTP baru.");
-    } finally {
-      setLoading(false);
     }
-  };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">
-            {step === 1 ? "🔐 Login" : "🔢 Verifikasi OTP"}
-          </h1>
-          <p className="text-gray-600 mt-2 text-sm">
-            {step === 1
-              ? "Masukkan email dan password Anda"
-              : "Masukkan kode OTP yang dikirim ke WhatsApp"}
-          </p>
-        </div>
+    // Jika user memiliki MFA (mis. WhatsApp), buat OTP dan simpan ke DB
+    if (user.mfaEnabled) {
+      const otp = Math.floor(100000 + Math.random() * 900000); // 6 digit
+      const expires = new Date(Date.now() + 5 * 60 * 1000); // 5 menit
 
-        {/* Success Alert */}
-        {success && (
-          <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-lg mb-4 text-sm flex items-start">
-            <span className="mr-2">✅</span>
-            <span>{success}</span>
-          </div>
-        )}
+      user.loginOtp = String(otp);
+      user.otpExpires = expires;
+      user.mfaVerified = false;
+      await user.save();
 
-        {/* Error Alert */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg mb-4 text-sm flex items-start">
-            <span className="mr-2">❌</span>
-            <span>{error}</span>
-          </div>
-        )}
+      // Kirim OTP via Fonnte (WhatsApp/SMS)
+      try {
+        const phone = user.whatsapp || user.phone || null;
+        if (!phone) {
+          console.warn("User has MFA enabled but no phone number stored.");
+        } else {
+          await sendOtpViaFonnte(phone, String(otp));
+        }
+      } catch (err) {
+        console.error("Gagal mengirim OTP via Fonnte:", err);
+        // tetap return requiresMfa agar client bisa tampilkan step OTP,
+        // tapi informasikan kalau pengiriman gagal
+        return NextResponse.json(
+          { requiresMfa: true, message: "OTP dibuat, tetapi gagal dikirim." },
+          { status: 200 }
+        );
+      }
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          {step === 1 ? (
-            <>
-              {/* Email Input */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  placeholder="nama@example.com"
-                  disabled={loading}
-                />
-              </div>
+      console.log(`OTP for ${user.email}: ${otp} (expires ${expires})`);
 
-              {/* Password Input */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Password <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  placeholder="••••••••"
-                  disabled={loading}
-                />
-              </div>
+      return NextResponse.json(
+        { requiresMfa: true, message: "OTP telah dikirim." },
+        { status: 200 }
+      );
+    }
 
-              {/* Login Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 px-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "⏳ Memproses..." : "Login"}
-              </button>
-            </>
-          ) : (
-            <>
-              {/* OTP Input */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Kode OTP <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                  required
-                  maxLength={6}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition"
-                  placeholder="000000"
-                  disabled={loading}
-                  autoFocus
-                />
-                <p className="text-xs text-gray-500 mt-2 text-center">
-                  Masukkan 6 digit kode yang dikirim ke WhatsApp Anda
-                </p>
-              </div>
-
-              {/* Verify Button */}
-              <button
-                type="submit"
-                disabled={loading || otp.length !== 6}
-                className="w-full py-3 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "⏳ Memverifikasi..." : "Verifikasi OTP"}
-              </button>
-
-              {/* Resend OTP */}
-              <div className="flex justify-between items-center text-sm">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep(1);
-                    setOtp("");
-                    setError("");
-                    setSuccess("");
-                  }}
-                  className="text-gray-600 hover:text-gray-800 font-medium transition"
-                  disabled={loading}
-                >
-                  ← Kembali ke login
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResendOTP}
-                  className="text-blue-600 hover:text-blue-800 font-medium transition disabled:text-gray-400"
-                  disabled={loading}
-                >
-                  Kirim ulang OTP
-                </button>
-              </div>
-            </>
-          )}
-        </form>
-
-        {/* Register Link */}
-        <div className="mt-8 text-center">
-          <p className="text-gray-600 text-sm">
-            Belum punya akun?{" "}
-            <button
-              type="button"
-              onClick={() => router.push("/register")}
-              className="text-blue-600 hover:text-blue-800 font-semibold hover:underline transition"
-            >
-              Daftar di sini
-            </button>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+    // Jika tidak ada MFA, kembalikan data user untuk session
+    return NextResponse.json(
+      {
+        success: true,
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          whatsapp: user.whatsapp,
+          role: user.role,
+        },
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Login error:", error);
+    return NextResponse.json({ message: "Server error." }, { status: 500 });
+  }
 }

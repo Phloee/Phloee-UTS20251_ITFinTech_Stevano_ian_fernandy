@@ -1,17 +1,41 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { useAuthContext } from "../context/AuthContext";
 
 export default function Header({
   title = "Payment Gateway Store",
   cartCount = 0,
 }) {
   const router = useRouter();
+  const { authState } = useAuthContext();
 
   const goToCart = () => {
-    if (cartCount === 0) {
+    // Read local cart length to decide
+    let localCart = [];
+    if (typeof window !== "undefined") {
+      try {
+        localCart = JSON.parse(localStorage.getItem("shopping_cart") || "[]");
+      } catch (e) {
+        localCart = [];
+      }
+    }
+    const localCount = localCart.reduce((s, it) => s + (it.quantity || 0), 0);
+    if (localCount === 0) {
       alert("Cart is empty!");
       return;
     }
+
+    const isLoggedIn =
+      typeof window !== "undefined" &&
+      (localStorage.getItem("isLoggedIn") === "true" ||
+        !!localStorage.getItem("user"));
+    if (!isLoggedIn) {
+      // Save redirect so after login we return and auto-submit
+      localStorage.setItem("checkoutRedirect", "/checkout?auto=1");
+      router.push("/login");
+      return;
+    }
+
     router.push("/checkout");
   };
 
@@ -49,6 +73,30 @@ export default function Header({
                 </span>
               )}
             </button>
+
+            {/* Profile Icon - Minimal Design */}
+            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+              {authState?.isAuthenticated ? (
+                <span className="text-gray-600 font-medium">
+                  {authState.user?.username?.charAt(0).toUpperCase() || "U"}
+                </span>
+              ) : (
+                <span className="text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

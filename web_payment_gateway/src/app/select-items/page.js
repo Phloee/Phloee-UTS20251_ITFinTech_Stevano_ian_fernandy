@@ -86,6 +86,19 @@ export default function SelectItems() {
       alert("Mohon tambahkan item ke keranjang terlebih dahulu");
       return;
     }
+    // If user not logged in, redirect to login first and save redirect with auto flag
+    if (typeof window !== "undefined") {
+      const isLoggedIn =
+        localStorage.getItem("isLoggedIn") === "true" ||
+        !!localStorage.getItem("user");
+      if (!isLoggedIn) {
+        // when login completes, we'll return to /checkout?auto=1 which triggers auto-submit
+        localStorage.setItem("checkoutRedirect", "/checkout?auto=1");
+        router.push("/login");
+        return;
+      }
+    }
+
     router.push("/checkout");
   };
 

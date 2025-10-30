@@ -22,12 +22,16 @@ export async function POST(request) {
     }
 
     // ✅ Cari user berdasarkan email ATAU nomor WhatsApp
+    // NOTE: `loginOtp` and `otpExpires` are defined with select: false in the schema,
+    // so we must explicitly include them when querying.
     let user;
     if (email) {
-      user = await User.findOne({ email });
+      user = await User.findOne({ email }).select("+loginOtp +otpExpires");
       console.log("Mencari user dengan email:", email);
     } else if (nomor) {
-      user = await User.findOne({ whatsapp: nomor });
+      user = await User.findOne({ whatsapp: nomor }).select(
+        "+loginOtp +otpExpires"
+      );
       console.log("Mencari user dengan nomor:", nomor);
     }
 

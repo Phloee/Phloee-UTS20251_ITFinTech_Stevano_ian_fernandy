@@ -1,6 +1,8 @@
 // scripts/seed.js
 const mongoose = require("mongoose");
-require("dotenv").config({ path: ".env.local" });
+// Load environment variables. Prefer project-level .env, fall back to .env.local if present.
+// Using config() without path lets dotenv load .env or .env.local depending on environment.
+require("dotenv").config();
 
 const MONGODB_URL = process.env.MONGODB_URL;
 
@@ -61,7 +63,7 @@ const sampleProducts = [
     description: "Refreshing cola drink 330ml",
     category: "Drinks",
     stock: 100,
-    imageUrl: "/../../public/images/coca-cola.jpg",
+    imageUrl: "/images/coca-cola.jpg",
   },
   {
     name: "Orange Juice",
@@ -69,7 +71,7 @@ const sampleProducts = [
     description: "Fresh orange juice 500ml",
     category: "Drinks",
     stock: 50,
-    imageUrl: "/../../public/images/orange-juice.jpg",
+    imageUrl: "/images/orange-juice.jpg",
   },
   {
     name: "Water Bottle",
@@ -77,7 +79,7 @@ const sampleProducts = [
     description: "Pure mineral water 600ml",
     category: "Drinks",
     stock: 200,
-    imageUrl: "/../../public/images/water-bottle.jpg",
+    imageUrl: "/images/water-bottle.jpg",
   },
   {
     name: "Green Tea",
@@ -85,7 +87,7 @@ const sampleProducts = [
     description: "Japanese green tea 350ml",
     category: "Drinks",
     stock: 75,
-    imageUrl: "/../../public/images/green-tea.jpg",
+    imageUrl: "/images/green-tea.jpg",
   },
   {
     name: "Energy Drink",
@@ -93,7 +95,7 @@ const sampleProducts = [
     description: "Energy boost drink 250ml",
     category: "Drinks",
     stock: 60,
-    imageUrl: "/../../public/images/energy-drink.jpg",
+    imageUrl: "/images/energy-drink.jpg",
   },
   {
     name: "Potato Chips",
@@ -101,7 +103,7 @@ const sampleProducts = [
     description: "Crispy potato chips 150g",
     category: "Snacks",
     stock: 75,
-    imageUrl: "/../../public/images/potato-chips.jpg",
+    imageUrl: "/images/potato-chips.jpg",
   },
   {
     name: "Chocolate Bar",
@@ -109,7 +111,7 @@ const sampleProducts = [
     description: "Milk chocolate bar 100g",
     category: "Snacks",
     stock: 60,
-    imageUrl: "/../../public/images/chocolate-bar.jpg",
+    imageUrl: "/images/chocolate-bar.jpg",
   },
   {
     name: "Cookies",
@@ -117,7 +119,7 @@ const sampleProducts = [
     description: "Chocolate chip cookies 200g",
     category: "Snacks",
     stock: 80,
-    imageUrl: "/../../public/images/cookies.jpg",
+    imageUrl: "/images/cookies.jpg",
   },
   {
     name: "Nuts Mix",
@@ -125,7 +127,7 @@ const sampleProducts = [
     description: "Mixed nuts variety pack 250g",
     category: "Snacks",
     stock: 40,
-    imageUrl: "/../../public/images/nuts-mix.jpg",
+    imageUrl: "/images/nuts-mix.jpg",
   },
   {
     name: "Candy Pack",
@@ -133,7 +135,7 @@ const sampleProducts = [
     description: "Assorted candy pack 150g",
     category: "Snacks",
     stock: 90,
-    imageUrl: "/../../public/images/candy-pack.jpg",
+    imageUrl: "/images/candy-pack.jpg",
   },
   {
     name: "Crackers",
@@ -141,7 +143,7 @@ const sampleProducts = [
     description: "Cheese crackers 180g",
     category: "Snacks",
     stock: 65,
-    imageUrl: "/../../public/images/crackers.jpg",
+    imageUrl: "/images/crackers.jpg",
   },
   {
     name: "Snack Bundle",
@@ -149,7 +151,7 @@ const sampleProducts = [
     description: "Mix of popular snacks (3 items)",
     category: "Bundle",
     stock: 30,
-    imageUrl: "/../../public/images/snack-bundle.jpg",
+    imageUrl: "/images/snack-bundle.jpg",
   },
   {
     name: "Drink Bundle",
@@ -157,7 +159,7 @@ const sampleProducts = [
     description: "Combo of 3 different drinks",
     category: "Bundle",
     stock: 25,
-    imageUrl: "/../../public/images/drink-bundle.jpg",
+    imageUrl: "/images/drink-bundle.jpg",
   },
   {
     name: "Party Bundle",
@@ -165,7 +167,7 @@ const sampleProducts = [
     description: "Perfect for parties (5 snacks + 3 drinks)",
     category: "Bundle",
     stock: 15,
-    imageUrl: "/../../public/images/party-bundle.jpg",
+    imageUrl: "/public/images/party-bundle.jpg",
   },
   {
     name: "Student Bundle",
@@ -173,7 +175,7 @@ const sampleProducts = [
     description: "Budget-friendly combo (2 snacks + 2 drinks)",
     category: "Bundle",
     stock: 35,
-    imageUrl: "/../../public/images/student-bundle.jpg",
+    imageUrl: "/images/student-bundle.jpg",
   },
 ];
 
