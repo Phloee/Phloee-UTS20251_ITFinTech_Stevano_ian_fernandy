@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatCurrency } from "../../utils/formatCurrency";
 
 export default function CartItem({
@@ -9,6 +9,7 @@ export default function CartItem({
   className = "",
 }) {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const handleQuantityChange = async (newQuantity) => {
     if (newQuantity < 0) return;
@@ -27,46 +28,46 @@ export default function CartItem({
     }
   };
 
+  // Reset error state jika item berubah
+  useEffect(() => {
+    setImageError(false);
+  }, [item._id, item.imageUrl]);
+
   return (
     <div
       className={`flex items-center space-x-4 p-4 bg-white rounded-lg border ${className} ${
         isUpdating ? "opacity-60" : ""
       }`}
     >
-      {/* Product Image */}
-      <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-        {item.imageUrl ? (
+      {/* Product Image or Fallback */}
+      <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+        {item.imageUrl && !imageError ? (
           <img
             src={item.imageUrl}
             alt={item.name}
-            className="w-full h-full object-cover rounded-lg"
-            onError={(e) => {
-              e.target.style.display = "none";
-              e.target.nextSibling.style.display = "flex";
-            }}
+            className="w-full h-full object-cover"
+            onError={() => setImageError(true)}
           />
-        ) : null}
-        <span
-          className="text-2xl"
-          style={{ display: item.imageUrl ? "none" : "flex" }}
-        >
-          📦
-        </span>
+        ) : (
+          <span className="text-2xl">image eror</span>
+        )}
       </div>
 
       {/* Product Info */}
       <div className="flex-1 min-w-0">
         <h3 className="font-medium text-gray-900 truncate">{item.name}</h3>
         <p className="text-sm text-gray-600">{formatCurrency(item.price)}</p>
-        <p className="text-xs text-gray-500">{item.category}</p>
+        {item.category && (
+          <p className="text-xs text-gray-500">{item.category}</p>
+        )}
       </div>
 
       {/* Quantity Controls */}
       <div className="flex items-center space-x-2">
         <button
           onClick={() => handleQuantityChange(item.quantity - 1)}
-          disabled={isUpdating}
-          className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600 disabled:opacity-50"
+          disabled={isUpdating || item.quantity <= 1}
+          className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           −
         </button>

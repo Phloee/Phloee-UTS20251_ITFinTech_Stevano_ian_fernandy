@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { formatCurrency } from "../utils/formatCurrency"; 
+import { formatCurrency } from "../utils/formatCurrency";
 import { CATEGORIES } from "../utils/constants";
 
 export default function SelectItems() {
@@ -13,14 +13,29 @@ export default function SelectItems() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState([]);
+  const [isClient, setIsClient] = useState(false); // untuk hindari hydration error
 
+  // Cek login saat komponen mount
   useEffect(() => {
-    loadProducts();
-    if (typeof window !== "undefined") {
-      const savedCart = localStorage.getItem("shopping_cart");
-      if (savedCart) {
-        setCart(JSON.parse(savedCart));
-      }
+    setIsClient(true);
+    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+    if (!isLoggedIn) {
+      router.push("/login");
+      return;
+    }
+
+    // Load cart
+    const savedCart = localStorage.getItem("shopping_cart");
+    if (savedCart) {
+      setCart(JSON.parse(savedCart));
+    }
+  }, [router]);
+
+  // Load products (hanya jika user logged in)
+  useEffect(() => {
+    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+    if (isLoggedIn) {
+      loadProducts();
     }
   }, [selectedCategory]);
 
@@ -80,6 +95,11 @@ export default function SelectItems() {
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Jangan render apa-apa sebelum cek login selesai (hindari flash)
+  if (!isClient) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen">
       <header className="bg-white shadow-sm border-b">
@@ -110,7 +130,6 @@ export default function SelectItems() {
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lavender"
             />
             <div className="flex space-x-2">
-              {/* Periksa apakah CATEGORIES Anda didefinisikan dengan value: "All", "Drinks", "Snacks", "Bundle" */}
               {CATEGORIES.map((category) => (
                 <button
                   key={category.value}
@@ -140,15 +159,16 @@ export default function SelectItems() {
                 className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow"
               >
                 <div className="relative h-48 w-full">
-      
-                    <Image
-                      src={product.imageUrl}
-                      alt={product.name || "Product Image"}
-                      fill
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
-                      sizes="(max-width: 768px) 100vw, 25vw"
-                    />
-                  )
+                  <Image
+                    src={product.imageUrl || "/placeholder.jpg"}
+                    alt={product.name || "Product Image"}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, 25vw"
+                    onError={(e) => {
+                      e.currentTarget.src = "/placeholder.jpg";
+                    }}
+                  />
                 </div>
                 <div className="p-4">
                   <h3 className="font-semibold text-lg text-gray-900 mb-2">
