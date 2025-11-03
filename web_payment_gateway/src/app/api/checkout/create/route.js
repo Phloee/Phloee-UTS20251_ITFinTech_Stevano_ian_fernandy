@@ -1,10 +1,22 @@
-// /api/checkout/create/route.js
+// src/app/api/checkout/create/route.js
 import { NextResponse } from "next/server";
-import { sendWhatsAppMessage } from "../../libs/whatsapp";
+import { getServerSession } from "next-auth";
+import { authOptions } from "../../auth/[...nextauth]/route";
+
+// Import dari libs (naik 4 level: api -> app -> src, lalu masuk ke libs)
 import dbConnect from "../../../libs/mongodb";
+
+// Import models (sesuaikan dengan lokasi model Anda)
+// Jika model ada di src/app/models:
 import Checkout from "../../../models/Checkout";
 import Product from "../../../models/Product";
-import { v4 as uuidv4 } from "uuid";
+
+// Jika model ada di src/models (bukan di dalam app):
+// import Checkout from "../../../../../models/Checkout";
+// import Product from "../../../../../models/Product";
+
+// Import WhatsApp helper
+import { sendWhatsAppMessage } from "../../../libs/whatsapp";
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat("id-ID", {
@@ -14,136 +26,216 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
-export async function POST(req) {
-  try {
-    const { customerInfo, items, userId } = await req.json();
+export async function POST(request) {
+  console.log("\n" + "=".repeat(60));
+  console.log("🛒 CHECKOUT API CALLED");
+  console.log("=".repeat(60));
 
+  try {
+    // 1. Check session
+    const session = await getServerSession(authOptions);
+
+    if (!session) {
+      console.error("❌ No session found");
+      return NextResponse.json(
+        { success: false, error: "Please login first" },
+        { status: 401 }
+      );
+    }
+
+    console.log("✅ User:", session.user.email);
+
+    // 2. Connect DB
+    await dbConnect();
+    console.log("✅ DB connected");
+
+    // 3. Parse body
+    const body = await request.json();
+    console.log("📦 Request body:", JSON.stringify(body, null, 2));
+
+    const { customerInfo, items } = body;
+
+    // 4. Validate
     if (!customerInfo || !items || items.length === 0) {
+      console.error("❌ Invalid request data");
       return NextResponse.json(
         { success: false, error: "Invalid checkout data" },
         { status: 400 }
       );
     }
 
-    // Calculate total
-    const total = items.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0
-    );
+    // 5. Get products from DB
+    const productIds = items.map((item) => item.productId);
+    console.log("🔍 Searching products:", productIds);
 
-    // Connect to DB and save checkout
-    await dbConnect();
+    const products = await Product.find({ _id: { $in: productIds } });
+    console.log(`✅ Found ${products.length}/${items.length} products`);
 
-    // Validate items: each item should include a productId and quantity
-    if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Items array is required" },
-        { status: 400 }
+    // 6. Check all products exist
+    if (products.length !== items.length) {
+      const foundIds = products.map((p) => p._id.toString());
+      const missingIds = productIds.filter(
+        (id) => !foundIds.includes(id.toString())
       );
-    }
 
-    // Normalize productIds (support string, ObjectId-like objects, or nested $oid forms)
-    const normalizeId = (pid) => {
-      if (!pid) return null;
-      if (typeof pid === "string") return pid;
-      if (typeof pid === "object") {
-        if (pid.$oid) return pid.$oid;
-        if (pid.toString) return pid.toString();
-      }
-      return String(pid);
-    };
+      console.error("❌ Missing products:", missingIds);
 
-    const productIds = items
-      .map((it) => normalizeId(it.productId))
-      .filter(Boolean);
-
-    if (productIds.length !== items.length) {
       return NextResponse.json(
-        { success: false, error: "One or more items missing productId" },
-        { status: 400 }
-      );
-    }
-
-    // Fetch all products referenced by the cart in a single query
-    const productsFromDb = await Product.find({
-      _id: { $in: productIds },
-    }).lean();
-    const productMap = new Map(productsFromDb.map((p) => [String(p._id), p]));
-
-    // Build detailed items and validate
-    const detailedItems = [];
-    for (const it of items) {
-      const pid = normalizeId(it.productId);
-      const prod = productMap.get(pid);
-      if (!prod) {
-        return NextResponse.json(
-          { success: false, error: `Product not found: ${pid}` },
-          { status: 400 }
-        );
-      }
-
-      const qty = Number(it.quantity) || 0;
-      const price = Number(prod.price);
-      if (isNaN(price) || isNaN(qty) || qty <= 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Invalid quantity or price for product ${prod._id}`,
+        {
+          success: false,
+          error: "Some products not found in database",
+          debug: {
+            requested: productIds,
+            found: foundIds,
+            missing: missingIds,
           },
-          { status: 400 }
-        );
-      }
-
-      detailedItems.push({
-        productId: prod._id,
-        name: prod.name,
-        price: Math.round(price),
-        quantity: qty,
-        subtotal: Math.round(price) * qty,
-      });
+        },
+        { status: 404 }
+      );
     }
 
-    const subtotal = detailedItems.reduce((sum, it) => sum + it.subtotal, 0);
+    // 7. Calculate totals
+    let subtotal = 0;
+    const enrichedItems = items.map((item) => {
+      const product = products.find(
+        (p) => p._id.toString() === item.productId.toString()
+      );
+      const itemSubtotal = product.price * item.quantity; // Hitung subtotal per item
+      subtotal += itemSubtotal;
+
+      console.log(
+        `  ✓ ${product.name}: ${item.quantity}x ${formatCurrency(
+          product.price
+        )} = ${formatCurrency(itemSubtotal)}`
+      );
+
+      return {
+        productId: product._id,
+        name: product.name,
+        price: product.price,
+        quantity: item.quantity,
+        subtotal: itemSubtotal, // PENTING: Tambahkan field subtotal
+        imageUrl: product.imageUrl || null,
+      };
+    });
+
     const tax = Math.round(subtotal * 0.1);
     const shippingCost = subtotal > 50000 ? 0 : 10000;
-    const grandTotal = subtotal + tax + shippingCost;
+    const total = subtotal + tax + shippingCost;
 
-    const checkoutToSave = {
-      sessionId: uuidv4(),
-      userId: userId || null,
-      customerInfo,
-      items: detailedItems,
+    console.log("\n💰 Pricing:");
+    console.log("  Subtotal:", formatCurrency(subtotal));
+    console.log("  Tax:", formatCurrency(tax));
+    console.log(
+      "  Shipping:",
+      shippingCost === 0 ? "FREE" : formatCurrency(shippingCost)
+    );
+    console.log("  TOTAL:", formatCurrency(total));
+
+    // 8. Create checkout
+    // Generate unique sessionId untuk setiap checkout untuk mencegah duplicate key error
+    const uniqueSessionId = `${
+      session.user.id || "guest"
+    }-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    const checkout = await Checkout.create({
+      userId: session.user.id || null,
+      sessionId: uniqueSessionId,
+      customerInfo: {
+        name: customerInfo.name,
+        email: customerInfo.email,
+        phone: customerInfo.phone,
+        address: customerInfo.address,
+      },
+      items: enrichedItems,
       subtotal,
       tax,
       shippingCost,
-      total: grandTotal,
+      total,
       status: "PENDING",
-    };
+    });
 
-    const createdCheckout = await Checkout.create(checkoutToSave);
-    const checkout = createdCheckout.toObject();
+    console.log("✅ Checkout created:", checkout._id);
 
-    // Send WhatsApp notification if phone number is provided
+    // 9. Send WhatsApp (non-blocking)
     if (customerInfo.phone) {
-      try {
-        await sendWhatsAppMessage(
-          customerInfo.phone,
-          `🛒 Terima kasih! Pesanan Anda sedang diproses.\nTotal: ${formatCurrency(
-            total
-          )}`
-        );
-      } catch (whatsappError) {
-        console.error("WhatsApp notification failed:", whatsappError);
-        // Continue processing even if WhatsApp fails
-      }
+      // Format pesan WhatsApp dengan detail lengkap
+      const itemsList = enrichedItems
+        .map(
+          (item, index) =>
+            `${index + 1}. ${item.name}\n   ${
+              item.quantity
+            }x @ ${formatCurrency(item.price)} = ${formatCurrency(
+              item.subtotal
+            )}`
+        )
+        .join("\n");
+
+      const message = `🛒 *Terima kasih atas pesanan Anda!*
+
+📦 *Order ID:* ${checkout._id}
+
+*Detail Pesanan:*
+${itemsList}
+
+────────────────────
+Subtotal: ${formatCurrency(subtotal)}
+Pajak (10%): ${formatCurrency(tax)}
+Ongkir: ${shippingCost === 0 ? "GRATIS" : formatCurrency(shippingCost)}
+────────────────────
+*TOTAL: ${formatCurrency(total)}*
+
+📍 *Alamat Pengiriman:*
+${customerInfo.name}
+${customerInfo.address}
+${customerInfo.phone}
+
+📋 *Status:* Menunggu pembayaran
+Link pembayaran akan dikirim segera.
+
+Terima kasih telah berbelanja di SamShop! 🙏`;
+
+      sendWhatsAppMessage(customerInfo.phone, message).catch((err) => {
+        console.error("⚠️ WhatsApp failed (non-critical):", err.message);
+      });
+
+      console.log("📱 WhatsApp queued");
     }
 
-    return NextResponse.json({ success: true, data: checkout });
+    console.log("=".repeat(60));
+    console.log("✅ CHECKOUT SUCCESS");
+    console.log("=".repeat(60) + "\n");
+
+    return NextResponse.json({
+      success: true,
+      data: checkout,
+      message: "Checkout created successfully",
+    });
   } catch (error) {
-    console.error("Checkout error:", error);
+    console.error("\n" + "=".repeat(60));
+    console.error("❌ CHECKOUT ERROR");
+    console.error("=".repeat(60));
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
+    console.error("=".repeat(60) + "\n");
+
     return NextResponse.json(
-      { success: false, error: "Failed to process checkout" },
+      {
+        success: false,
+        error: error.message || "Internal Server Error",
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      },
       { status: 500 }
     );
   }
+}
+
+// GET endpoint untuk testing
+export async function GET() {
+  return NextResponse.json({
+    status: "✅ Checkout API is working",
+    endpoint: "/api/checkout/create",
+    methods: ["POST", "GET"],
+    timestamp: new Date().toISOString(),
+  });
 }

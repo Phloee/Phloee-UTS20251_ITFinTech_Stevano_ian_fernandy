@@ -1,5 +1,6 @@
 import "./globals.css";
 import ClientLayout from "./ClientLayout";
+import Providers from "./Providers"; // <-- LANGKAH 1: Import komponen Providers
 
 export const metadata = {
   title: "Payment Gateway Store - UTS IT Financial Services",
@@ -21,7 +22,10 @@ export default function RootLayout({ children }) {
         suppressHydrationWarning={true}
         className="text-gray-800 antialiased font-sans min-h-screen bg-snow-bg"
       >
-        <ClientLayout>{children}</ClientLayout>
+        {/* LANGKAH 2: Bungkus ClientLayout dengan komponen Providers */}
+        <Providers>
+          <ClientLayout>{children}</ClientLayout>
+        </Providers>
       </body>
     </html>
   );

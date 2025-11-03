@@ -1,10 +1,10 @@
 // libs/mongodb.js
 import mongoose from "mongoose";
 
-const MONGODB_URL = process.env.MONGODB_URL;
+const MONGO_URI = process.env.MONGO_URI;
 
-if (!MONGODB_URL) {
-  throw new Error("Please define the MONGODB_URL environment variable in .env");
+if (!MONGO_URI) {
+  throw new Error("Please define the MONGO_URI environment variable in .env");
 }
 
 let cached = global.mongoose;
@@ -21,7 +21,7 @@ async function dbConnect() {
 
   if (!cached.promise) {
     cached.promise = mongoose
-      .connect(MONGODB_URL, {
+      .connect(MONGO_URI, {
         bufferCommands: false,
       })
       .then((mongoose) => {

@@ -4,10 +4,10 @@ const mongoose = require("mongoose");
 // Using config() without path lets dotenv load .env or .env.local depending on environment.
 require("dotenv").config();
 
-const MONGODB_URL = process.env.MONGODB_URL;
+const MONGO_URI = process.env.MONGO_URI;
 
-if (!MONGODB_URL) {
-  console.error("❌ Please define MONGODB_URL environment variable");
+if (!MONGO_URI) {
+  console.error("❌ Please define MONGO_URI environment variable");
   process.exit(1);
 }
 
@@ -184,7 +184,7 @@ async function seedDatabase() {
     console.log("🌱 Starting database seeding...");
 
     // Connect to MongoDB
-    await mongoose.connect(MONGODB_URL);
+    await mongoose.connect(MONGO_URI);
     console.log("✅ Connected to MongoDB");
 
     // Clear existing products
@@ -234,7 +234,7 @@ module.exports = { seedDatabase, sampleProducts };
 // Additional utility functions for testing
 async function clearDatabase() {
   try {
-    await mongoose.connect(MONGODB_URL);
+    await mongoose.connect(MONGO_URI);
     console.log("✅ Connected to MongoDB");
 
     const collections = ["products", "checkouts", "payments", "users"];

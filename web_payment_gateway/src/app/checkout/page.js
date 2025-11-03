@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 // Helper functions
 const formatCurrency = (amount) => {
@@ -70,9 +71,10 @@ const validateCheckoutForm = (formData) => {
 
 export default function Checkout() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [isClient, setIsClient] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -81,43 +83,43 @@ export default function Checkout() {
   });
   const [errors, setErrors] = useState({});
 
-  // ✅ Cek login dan load data user
+  // Check authentication dan cart
   useEffect(() => {
-    setIsClient(true);
-
-    // Cek apakah user sudah login
-    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-    if (!isLoggedIn) {
-      router.push("/login");
-      return;
-    }
-
-    // Load cart
+    // Cek apakah ada cart
     const cartData = getCartFromStorage();
-    setCart(cartData);
 
-    // Jika cart kosong, redirect ke select-items
     if (cartData.length === 0) {
+      alert("Keranjang Anda kosong!");
       router.push("/select-items");
       return;
     }
 
-    // ✅ Pre-fill form dengan data user dari localStorage
-    const userData = localStorage.getItem("user");
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        setFormData({
-          name: user.name || "",
-          email: user.email || "",
-          phone: user.whatsapp || "",
-          address: "",
-        });
-      } catch (error) {
-        console.error("Error parsing user data:", error);
-      }
+    setCart(cartData);
+
+    // Jika status masih loading, tunggu
+    if (status === "loading") {
+      return;
     }
-  }, [router]);
+
+    // Jika belum login, redirect ke login dengan membawa info checkout
+    if (status === "unauthenticated") {
+      alert("Silakan login terlebih dahulu untuk melanjutkan checkout.");
+      // Simpan redirect path
+      localStorage.setItem("redirect_after_login", "/checkout");
+      router.push("/login");
+      return;
+    }
+
+    // Jika sudah login, auto-fill form
+    if (status === "authenticated" && session?.user) {
+      setFormData((prev) => ({
+        ...prev,
+        name: session.user.name || prev.name,
+        email: session.user.email || prev.email,
+      }));
+      setIsCheckingAuth(false);
+    }
+  }, [status, session, router]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -126,7 +128,6 @@ export default function Checkout() {
       [name]: value,
     }));
 
-    // Clear error when user starts typing
     if (errors[name]) {
       setErrors((prev) => ({
         ...prev,
@@ -140,6 +141,11 @@ export default function Checkout() {
       const updatedCart = cart.filter((item) => item._id !== productId);
       setCart(updatedCart);
       saveCartToStorage(updatedCart);
+
+      if (updatedCart.length === 0) {
+        alert("Keranjang kosong!");
+        router.push("/select-items");
+      }
     } else {
       const updatedCart = cart.map((item) =>
         item._id === productId ? { ...item, quantity: newQuantity } : item
@@ -154,8 +160,8 @@ export default function Checkout() {
     setCart(updatedCart);
     saveCartToStorage(updatedCart);
 
-    // Jika cart kosong setelah hapus, redirect ke select-items
     if (updatedCart.length === 0) {
+      alert("Keranjang kosong!");
       router.push("/select-items");
     }
   };
@@ -165,8 +171,8 @@ export default function Checkout() {
       (sum, item) => sum + item.price * item.quantity,
       0
     );
-    const tax = Math.round(subtotal * 0.1); // 10% tax
-    const shippingCost = subtotal > 50000 ? 0 : 10000; // Free shipping over 50k
+    const tax = Math.round(subtotal * 0.1);
+    const shippingCost = subtotal > 50000 ? 0 : 10000;
     const total = subtotal + tax + shippingCost;
     const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -178,7 +184,13 @@ export default function Checkout() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate form
+    // Double check authentication
+    if (status !== "authenticated") {
+      alert("Sesi Anda telah berakhir. Silakan login kembali.");
+      router.push("/login");
+      return;
+    }
+
     const validation = validateCheckoutForm(formData);
     if (!validation.isValid) {
       setErrors(validation.errors);
@@ -189,9 +201,11 @@ export default function Checkout() {
     setLoading(true);
 
     try {
-      // Create checkout
       const checkoutData = {
-        customerInfo: formData,
+        customerInfo: {
+          ...formData,
+          userId: session?.user?.id,
+        },
         items: cart.map((item) => ({
           productId: item._id,
           quantity: item.quantity,
@@ -209,10 +223,9 @@ export default function Checkout() {
       const checkoutResult = await checkoutResponse.json();
 
       if (!checkoutResult.success) {
-        throw new Error(checkoutResult.error);
+        throw new Error(checkoutResult.error || "Failed to create checkout");
       }
 
-      // Create payment
       const paymentResponse = await fetch("/api/payment/create", {
         method: "POST",
         headers: {
@@ -224,25 +237,42 @@ export default function Checkout() {
       const paymentResult = await paymentResponse.json();
 
       if (!paymentResult.success) {
-        throw new Error(paymentResult.error);
+        throw new Error(paymentResult.error || "Failed to create payment");
       }
+
+      // Clear cart after successful checkout
+      localStorage.removeItem("shopping_cart");
 
       // Redirect to payment
       window.location.href = paymentResult.data.paymentUrl;
     } catch (error) {
+      console.error("Checkout error:", error);
       alert(error.message || "Failed to process checkout");
     } finally {
       setLoading(false);
     }
   };
 
-  // Jangan render sebelum client-side check selesai
-  if (!isClient || cart.length === 0) {
+  // Loading state saat mengecek auth
+  if (status === "loading" || isCheckingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Memeriksa autentikasi...</p>
+        </div>
       </div>
     );
+  }
+
+  // Jika belum authenticated, jangan render (akan redirect)
+  if (status !== "authenticated") {
+    return null;
+  }
+
+  // Jika cart kosong, jangan render (akan redirect)
+  if (cart.length === 0) {
+    return null;
   }
 
   return (
@@ -252,11 +282,17 @@ export default function Checkout() {
         <div className="mb-8">
           <button
             onClick={() => router.push("/select-items")}
-            className="flex items-center text-blue-600 hover:text-blue-700 mb-4"
+            className="flex items-center text-blue-600 hover:text-blue-700 mb-4 transition"
           >
             ← Back to Shopping
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
+            <div className="text-sm text-gray-600">
+              Logged in as:{" "}
+              <span className="font-medium">{session?.user?.email}</span>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -264,18 +300,31 @@ export default function Checkout() {
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-6">Order Summary</h2>
 
-            <div className="space-y-4 mb-6">
+            <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
               {cart.map((item) => (
                 <div
                   key={item._id}
                   className="flex items-center space-x-4 border-b pb-4"
                 >
-                  <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
-                    📦
+                  <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.style.display = "none";
+                          e.target.nextSibling.style.display = "block";
+                        }}
+                      />
+                    ) : null}
+                    <span style={{ display: item.imageUrl ? "none" : "block" }}>
+                      📦
+                    </span>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-medium">{item.name}</h3>
-                    <p className="text-gray-600">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium truncate">{item.name}</h3>
+                    <p className="text-gray-600 text-sm">
                       {formatCurrency(item.price)}
                     </p>
                   </div>
@@ -284,27 +333,32 @@ export default function Checkout() {
                       onClick={() =>
                         handleQuantityChange(item._id, item.quantity - 1)
                       }
-                      className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center"
+                      className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
+                      disabled={loading}
                     >
                       -
                     </button>
-                    <span className="w-8 text-center">{item.quantity}</span>
+                    <span className="w-8 text-center font-medium">
+                      {item.quantity}
+                    </span>
                     <button
                       onClick={() =>
                         handleQuantityChange(item._id, item.quantity + 1)
                       }
-                      className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center"
+                      className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
+                      disabled={loading}
                     >
                       +
                     </button>
                   </div>
                   <div className="text-right">
-                    <p className="font-medium">
+                    <p className="font-medium whitespace-nowrap">
                       {formatCurrency(item.price * item.quantity)}
                     </p>
                     <button
                       onClick={() => removeFromCart(item._id)}
-                      className="text-red-500 text-sm hover:text-red-700"
+                      className="text-red-500 text-sm hover:text-red-700 transition"
+                      disabled={loading}
                     >
                       Remove
                     </button>
@@ -315,30 +369,39 @@ export default function Checkout() {
 
             {/* Totals */}
             <div className="space-y-2 border-t pt-4">
-              <div className="flex justify-between">
+              <div className="flex justify-between text-gray-700">
                 <span>Subtotal ({itemCount} items)</span>
                 <span>{formatCurrency(subtotal)}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between text-gray-700">
                 <span>Tax (10%)</span>
                 <span>{formatCurrency(tax)}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between text-gray-700">
                 <span>Shipping</span>
                 <span>
-                  {shippingCost === 0 ? "FREE" : formatCurrency(shippingCost)}
+                  {shippingCost === 0 ? (
+                    <span className="text-green-600 font-medium">FREE</span>
+                  ) : (
+                    formatCurrency(shippingCost)
+                  )}
                 </span>
               </div>
-              <div className="flex justify-between font-bold text-lg border-t pt-2">
+              {subtotal < 50000 && (
+                <p className="text-xs text-gray-500">
+                  Free shipping for orders above Rp 50,000
+                </p>
+              )}
+              <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
                 <span>Total</span>
-                <span>{formatCurrency(total)}</span>
+                <span className="text-blue-600">{formatCurrency(total)}</span>
               </div>
             </div>
           </div>
 
           {/* Customer Information Form */}
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-6">Shipping Address</h2>
+            <h2 className="text-xl font-semibold mb-6">Shipping Information</h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -354,6 +417,7 @@ export default function Checkout() {
                     errors.name ? "border-red-500" : "border-gray-300"
                   }`}
                   placeholder="Enter your full name"
+                  disabled={loading}
                 />
                 {errors.name && (
                   <p className="text-red-500 text-sm mt-1">{errors.name}</p>
@@ -372,7 +436,8 @@ export default function Checkout() {
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.email ? "border-red-500" : "border-gray-300"
                   }`}
-                  placeholder="Enter your email"
+                  placeholder="your.email@example.com"
+                  disabled={loading}
                 />
                 {errors.email && (
                   <p className="text-red-500 text-sm mt-1">{errors.email}</p>
@@ -381,7 +446,7 @@ export default function Checkout() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Phone Number *
+                  Phone Number (WhatsApp) *
                 </label>
                 <input
                   type="tel"
@@ -391,16 +456,20 @@ export default function Checkout() {
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.phone ? "border-red-500" : "border-gray-300"
                   }`}
-                  placeholder="08xxxxxxxxxx"
+                  placeholder="08123456789"
+                  disabled={loading}
                 />
                 {errors.phone && (
                   <p className="text-red-500 text-sm mt-1">{errors.phone}</p>
                 )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Order confirmation will be sent via WhatsApp
+                </p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full Address *
+                  Complete Shipping Address *
                 </label>
                 <textarea
                   name="address"
@@ -410,7 +479,8 @@ export default function Checkout() {
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.address ? "border-red-500" : "border-gray-300"
                   }`}
-                  placeholder="Enter your complete address"
+                  placeholder="Street, City, Province, Postal Code"
+                  disabled={loading}
                 />
                 {errors.address && (
                   <p className="text-red-500 text-sm mt-1">{errors.address}</p>
@@ -420,22 +490,33 @@ export default function Checkout() {
               <div className="pt-4">
                 <h3 className="text-lg font-semibold mb-4">Payment Method</h3>
                 <div className="space-y-3">
-                  <label className="flex items-center">
+                  <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
                     <input
                       type="radio"
                       name="payment"
                       className="mr-3"
                       defaultChecked
+                      disabled={loading}
                     />
-                    💳 Credit/Debit Card
+                    <span>💳 Credit/Debit Card</span>
                   </label>
-                  <label className="flex items-center">
-                    <input type="radio" name="payment" className="mr-3" />
-                    📱 E-Wallet (OVO, GoPay, DANA)
+                  <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                    <input
+                      type="radio"
+                      name="payment"
+                      className="mr-3"
+                      disabled={loading}
+                    />
+                    <span>📱 E-Wallet (OVO, GoPay, DANA)</span>
                   </label>
-                  <label className="flex items-center">
-                    <input type="radio" name="payment" className="mr-3" />
-                    🏦 Bank Transfer
+                  <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                    <input
+                      type="radio"
+                      name="payment"
+                      className="mr-3"
+                      disabled={loading}
+                    />
+                    <span>🏦 Bank Transfer</span>
                   </label>
                 </div>
               </div>
@@ -449,10 +530,38 @@ export default function Checkout() {
                     : "bg-blue-600 hover:bg-blue-700"
                 }`}
               >
-                {loading
-                  ? "Processing..."
-                  : `Continue to Payment → ${formatCurrency(total)}`}
+                {loading ? (
+                  <span className="flex items-center justify-center">
+                    <svg
+                      className="animate-spin h-5 w-5 mr-3"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Processing...
+                  </span>
+                ) : (
+                  `Proceed to Payment → ${formatCurrency(total)}`
+                )}
               </button>
+
+              <p className="text-xs text-center text-gray-500 mt-4">
+                By clicking "Proceed to Payment", you agree to our Terms of
+                Service and Privacy Policy
+              </p>
             </form>
           </div>
         </div>
