@@ -2,21 +2,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]/route";
-
-// Import dari libs (naik 4 level: api -> app -> src, lalu masuk ke libs)
 import dbConnect from "../../../libs/mongodb";
-
-// Import models (sesuaikan dengan lokasi model Anda)
-// Jika model ada di src/app/models:
 import Checkout from "../../../models/Checkout";
 import Product from "../../../models/Product";
-
-// Jika model ada di src/models (bukan di dalam app):
-// import Checkout from "../../../../../models/Checkout";
-// import Product from "../../../../../models/Product";
-
-// Import WhatsApp helper
-import { sendWhatsAppMessage } from "../../../libs/whatsapp";
+import { sendShortNotification } from "../../../libs/fonnte";
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat("id-ID", {
@@ -100,7 +89,7 @@ export async function POST(request) {
       const product = products.find(
         (p) => p._id.toString() === item.productId.toString()
       );
-      const itemSubtotal = product.price * item.quantity; // Hitung subtotal per item
+      const itemSubtotal = product.price * item.quantity;
       subtotal += itemSubtotal;
 
       console.log(
@@ -114,7 +103,7 @@ export async function POST(request) {
         name: product.name,
         price: product.price,
         quantity: item.quantity,
-        subtotal: itemSubtotal, // PENTING: Tambahkan field subtotal
+        subtotal: itemSubtotal,
         imageUrl: product.imageUrl || null,
       };
     });
@@ -133,7 +122,6 @@ export async function POST(request) {
     console.log("  TOTAL:", formatCurrency(total));
 
     // 8. Create checkout
-    // Generate unique sessionId untuk setiap checkout untuk mencegah duplicate key error
     const uniqueSessionId = `${
       session.user.id || "guest"
     }-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -157,49 +145,26 @@ export async function POST(request) {
 
     console.log("✅ Checkout created:", checkout._id);
 
-    // 9. Send WhatsApp (non-blocking)
+    // 9. Send WhatsApp PENDING notification (non-blocking)
     if (customerInfo.phone) {
-      // Format pesan WhatsApp dengan detail lengkap
-      const itemsList = enrichedItems
-        .map(
-          (item, index) =>
-            `${index + 1}. ${item.name}\n   ${
-              item.quantity
-            }x @ ${formatCurrency(item.price)} = ${formatCurrency(
-              item.subtotal
-            )}`
-        )
-        .join("\n");
+      // Fire and forget - don't wait for WhatsApp
+      sendShortNotification(
+        customerInfo.phone,
+        checkout._id.toString(),
+        formatCurrency(total)
+      )
+        .then(() => {
+          console.log("✅ WhatsApp PENDING notification sent successfully");
+        })
+        .catch((err) => {
+          console.error(
+            "⚠️ WhatsApp PENDING notification failed:",
+            err.message
+          );
+          // Don't block checkout - continue anyway
+        });
 
-      const message = `🛒 *Terima kasih atas pesanan Anda!*
-
-📦 *Order ID:* ${checkout._id}
-
-*Detail Pesanan:*
-${itemsList}
-
-────────────────────
-Subtotal: ${formatCurrency(subtotal)}
-Pajak (10%): ${formatCurrency(tax)}
-Ongkir: ${shippingCost === 0 ? "GRATIS" : formatCurrency(shippingCost)}
-────────────────────
-*TOTAL: ${formatCurrency(total)}*
-
-📍 *Alamat Pengiriman:*
-${customerInfo.name}
-${customerInfo.address}
-${customerInfo.phone}
-
-📋 *Status:* Menunggu pembayaran
-Link pembayaran akan dikirim segera.
-
-Terima kasih telah berbelanja di SamShop! 🙏`;
-
-      sendWhatsAppMessage(customerInfo.phone, message).catch((err) => {
-        console.error("⚠️ WhatsApp failed (non-critical):", err.message);
-      });
-
-      console.log("📱 WhatsApp queued");
+      console.log("📱 WhatsApp PENDING notification queued (non-blocking)");
     }
 
     console.log("=".repeat(60));

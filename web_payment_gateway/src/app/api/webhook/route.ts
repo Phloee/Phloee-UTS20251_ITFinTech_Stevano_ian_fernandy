@@ -1,13 +1,49 @@
-// app/api/webhook/route.js
+// src/app/api/webhooks/route.js
 import { NextResponse } from "next/server";
 import dbConnect from "../../libs/mongodb";
 import Payment from "../../models/Payment";
 import Checkout from "../../models/Checkout";
-import { sendOtpViaFonnte } from "../../libs/fonnte";
+import { sendPaymentSuccess } from "../../libs/fonnte";
 
-// Token webhook dari environment variables
 const XENDIT_WEBHOOK_TOKEN =
   process.env.XENDIT_WEBHOOK_TOKEN || process.env.XENDIT_WEBHOOK_SECRET_KEY;
+
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+  }).format(amount);
+};
+
+/**
+ * Send WhatsApp notification untuk payment success
+ */
+async function sendPaymentSuccessNotification(checkout, payment) {
+  if (!checkout.customerInfo?.phone) {
+    console.log("⚠️ No phone number found, skipping WhatsApp");
+    return;
+  }
+
+  try {
+    console.log(
+      "📱 Sending success notification to:",
+      checkout.customerInfo.phone
+    );
+
+    // Use optimized success function (non-blocking)
+    await sendPaymentSuccess(
+      checkout.customerInfo.phone,
+      checkout._id.toString(),
+      formatCurrency(payment.paidAmount || payment.amount)
+    );
+
+    console.log("✅ Success notification sent via Fonnte");
+  } catch (err) {
+    console.error("❌ Failed to send success WhatsApp:", err.message);
+    // Don't throw - allow webhook to continue
+  }
+}
 
 /**
  * Helper function untuk update payment dan checkout
@@ -16,13 +52,12 @@ async function updatePaymentAndCheckout(invoiceData) {
   await dbConnect();
 
   const { external_id, status } = invoiceData;
-  const xenditInvoiceId = invoiceData.id; // FIX: Don't destructure 'id' directly
+  const xenditInvoiceId = invoiceData.id;
 
   console.log(
     `🔍 Looking for payment with external_id: ${external_id} or invoice_id: ${xenditInvoiceId}`
   );
 
-  // Cari payment berdasarkan external_id ATAU xenditInvoiceId
   const payment = await Payment.findOne({
     $or: [{ externalId: external_id }, { xenditInvoiceId: xenditInvoiceId }],
   });
@@ -43,7 +78,7 @@ async function updatePaymentAndCheckout(invoiceData) {
     payment.status === "CONFIRMED"
   ) {
     console.log(`ℹ️ Payment already processed (${payment.status})`);
-    return { updated: false };
+    return { updated: false, alreadyProcessed: true };
   }
 
   // Update payment
@@ -59,11 +94,12 @@ async function updatePaymentAndCheckout(invoiceData) {
   payment.webhookData = invoiceData;
 
   await payment.save();
+  console.log(`✅ Payment ${payment._id} updated`);
 
   // Update checkout to PAID
   const checkout = await Checkout.findByIdAndUpdate(
     payment.checkoutId,
-    { status: "PAID" },
+    { status: "PAID", paidAt: new Date() },
     { new: true }
   );
 
@@ -73,39 +109,15 @@ async function updatePaymentAndCheckout(invoiceData) {
 
   console.log(`✅ Checkout ${checkout._id} updated to PAID`);
 
-  // Send WhatsApp notification via Fonnte
-  if (checkout.customerInfo?.phone) {
-    try {
-      const formatRupiah = (num) =>
-        new Intl.NumberFormat("id-ID", {
-          style: "currency",
-          currency: "IDR",
-          minimumFractionDigits: 0,
-        }).format(num);
+  // Send WhatsApp notification (fire and forget)
+  sendPaymentSuccessNotification(checkout, payment).catch((err) => {
+    console.error(
+      "⚠️ WhatsApp notification failed (non-critical):",
+      err.message
+    );
+  });
 
-      const message = `✅ *Pembayaran Berhasil!*
-
-Terima kasih atas pembayaran Anda! 🎉
-
-📦 *Order ID:* ${checkout._id}
-💰 *Total Dibayar:* ${formatRupiah(payment.paidAmount || payment.amount)}
-💳 *Metode:* ${payment.paymentChannel || payment.paymentMethod}
-
-✅ Pembayaran telah dikonfirmasi.
-📦 Pesanan sedang diproses.
-
-Kami akan menghubungi Anda untuk pengiriman!
-
-— SamShop Team`;
-
-      await sendOtpViaFonnte(checkout.customerInfo.phone, message);
-      console.log("📱 WhatsApp notification sent via Fonnte");
-    } catch (err) {
-      console.error("⚠️ Failed to send WhatsApp:", err.message);
-    }
-  }
-
-  return { updated: true };
+  return { updated: true, checkout, payment };
 }
 
 /**
@@ -122,7 +134,6 @@ export async function POST(request) {
 
     if (!XENDIT_WEBHOOK_TOKEN) {
       console.error("❌ XENDIT_WEBHOOK_TOKEN not configured in .env");
-      // Don't reveal server config issues to external callers
       return NextResponse.json(
         { success: false, error: "Webhook configuration error" },
         { status: 500 }
@@ -131,6 +142,8 @@ export async function POST(request) {
 
     if (callbackToken !== XENDIT_WEBHOOK_TOKEN) {
       console.warn("⚠️ Invalid webhook token received");
+      console.warn("Expected:", XENDIT_WEBHOOK_TOKEN.substring(0, 10) + "...");
+      console.warn("Received:", callbackToken?.substring(0, 10) + "...");
       return NextResponse.json(
         { success: false, error: "Invalid token" },
         { status: 401 }
@@ -147,14 +160,11 @@ export async function POST(request) {
     let invoiceData;
     let eventType;
 
-    // New webhook format (with event field)
     if (body.event) {
       eventType = body.event;
       invoiceData = body.data || body;
       console.log(`📦 Event Type: ${eventType}`);
-    }
-    // Old webhook format (direct invoice data)
-    else {
+    } else {
       eventType = `invoice.${body.status?.toLowerCase()}`;
       invoiceData = body;
       console.log(`📦 Status: ${body.status}`);
@@ -169,14 +179,14 @@ export async function POST(request) {
       invoiceData.status === "PAID" ||
       invoiceData.status === "SETTLED"
     ) {
-      // Payment successful
+      console.log("💰 Processing PAID payment...");
       result = await updatePaymentAndCheckout(invoiceData);
       console.log("✅ Payment processed successfully");
     } else if (
       eventType === "invoice.expired" ||
       invoiceData.status === "EXPIRED"
     ) {
-      // Payment expired
+      console.log("⏰ Processing EXPIRED payment...");
       await dbConnect();
 
       const payment = await Payment.findOne({
@@ -207,7 +217,6 @@ export async function POST(request) {
     console.log("✅ WEBHOOK PROCESSED");
     console.log("=".repeat(60) + "\n");
 
-    // 4. Return success to Xendit (important!)
     return NextResponse.json({
       success: true,
       message: "Webhook processed successfully",
@@ -221,8 +230,6 @@ export async function POST(request) {
     console.error("Stack:", error.stack);
     console.error("=".repeat(60) + "\n");
 
-    // Return 200 OK to prevent Xendit from retrying
-    // but log the error for debugging
     return NextResponse.json({
       success: false,
       error: "Internal error acknowledged",
@@ -231,20 +238,20 @@ export async function POST(request) {
   }
 }
 
-// GET endpoint for testing webhook availability
 export async function GET() {
   const isConfigured = !!XENDIT_WEBHOOK_TOKEN;
 
   return NextResponse.json({
     status: "✅ Xendit Webhook endpoint is ready",
-    endpoint: "/api/webhook",
+    endpoint: "/api/webhooks",
     configured: isConfigured,
     timestamp: new Date().toISOString(),
     instructions: isConfigured
       ? "Webhook is configured and ready to receive events"
       : "⚠️ Please add XENDIT_WEBHOOK_TOKEN to your .env file",
     xenditDashboard:
-      "Configure this URL in Xendit Dashboard: https://yourdomain.com/api/webhook",
+      "Configure this URL in Xendit Dashboard → Settings → Webhooks",
+    webhookUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/api/webhooks`,
     supportedEvents: ["invoice.paid", "invoice.settled", "invoice.expired"],
   });
 }
