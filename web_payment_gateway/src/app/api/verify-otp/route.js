@@ -26,11 +26,13 @@ export async function POST(request) {
     // so we must explicitly include them when querying.
     let user;
     if (email) {
-      user = await User.findOne({ email }).select("+loginOtp +otpExpires");
+      user = await User.findOne({ email }).select(
+        "+loginOtp +otpExpires +password"
+      );
       console.log("Mencari user dengan email:", email);
     } else if (nomor) {
       user = await User.findOne({ whatsapp: nomor }).select(
-        "+loginOtp +otpExpires"
+        "+loginOtp +otpExpires +password"
       );
       console.log("Mencari user dengan nomor:", nomor);
     }
@@ -43,7 +45,9 @@ export async function POST(request) {
       );
     }
 
-    console.log("✅ User ditemukan:", user.name);
+    console.log("✅ User ditemukan - ID:", user._id);
+    console.log("Email:", user.email);
+    console.log("WhatsApp:", user.whatsapp);
     console.log("OTP tersimpan di DB:", user.loginOtp);
     console.log("OTP expires:", user.otpExpires);
     console.log("Waktu sekarang:", new Date());
@@ -52,7 +56,9 @@ export async function POST(request) {
     if (!user.loginOtp || !user.otpExpires) {
       console.log("❌ OTP tidak ditemukan atau sudah expired di database");
       return NextResponse.json(
-        { message: "OTP tidak ditemukan. Silakan login ulang." },
+        {
+          message: "OTP tidak ditemukan. Silakan request OTP terlebih dahulu.",
+        },
         { status: 400 }
       );
     }
@@ -66,7 +72,7 @@ export async function POST(request) {
       await user.save();
 
       return NextResponse.json(
-        { message: "OTP sudah kadaluarsa. Silakan login ulang." },
+        { message: "OTP sudah kadaluarsa. Silakan request OTP baru." },
         { status: 400 }
       );
     }
@@ -102,7 +108,7 @@ export async function POST(request) {
 
     console.log("=== VERIFY OTP SUCCESS ===");
 
-    // ✅ Return data user untuk session
+    // ✅ Return data user untuk session (tanpa field name)
     return NextResponse.json(
       {
         success: true,
@@ -110,9 +116,9 @@ export async function POST(request) {
         user: {
           id: user._id,
           email: user.email,
-          name: user.name,
           whatsapp: user.whatsapp,
           role: user.role,
+          mfaEnabled: user.mfaEnabled,
         },
       },
       { status: 200 }

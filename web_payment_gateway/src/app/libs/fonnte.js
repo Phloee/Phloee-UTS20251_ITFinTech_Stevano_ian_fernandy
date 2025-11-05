@@ -16,6 +16,10 @@ export async function sendOtpViaFonnte(phone, otp) {
   console.log("🔑 Token (awal):", token.substring(0, 5) + "...");
 
   try {
+    // Tambahkan timeout untuk prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 detik timeout
+
     const response = await fetch("https://api.fonnte.com/send", {
       method: "POST",
       headers: {
@@ -26,7 +30,10 @@ export async function sendOtpViaFonnte(phone, otp) {
         message: message,
         countryCode: "62",
       }),
+      signal: controller.signal, // Tambahkan abort signal
     });
+
+    clearTimeout(timeoutId);
 
     const result = await response.text();
     console.log("📡 Respons Fonnte (raw):", result);
@@ -65,6 +72,25 @@ export async function sendOtpViaFonnte(phone, otp) {
     console.log("✅ OTP terkirim via Fonnte!");
     return json;
   } catch (error) {
+    // Handle timeout error
+    if (error.name === "AbortError") {
+      console.error("⏰ Request timeout after 30s");
+      throw new Error(
+        "Timeout: Tidak dapat terhubung ke Fonnte. Periksa koneksi internet atau coba lagi."
+      );
+    }
+
+    // Handle fetch failed error
+    if (
+      error.message === "fetch failed" ||
+      error.cause?.code === "UND_ERR_CONNECT_TIMEOUT"
+    ) {
+      console.error("🌐 Network error:", error.message);
+      throw new Error(
+        "Tidak dapat terhubung ke Fonnte API. Periksa koneksi internet Anda atau coba lagi nanti."
+      );
+    }
+
     console.error("💥 Error kirim OTP:", error.message);
     throw error;
   }
@@ -141,6 +167,17 @@ export async function sendNotificationViaFonnte(phone, message) {
     if (error.name === "AbortError") {
       console.error("⏰ Request timeout after 20s");
       throw new Error("Fonnte timeout - please try shorter message");
+    }
+
+    // Handle network errors
+    if (
+      error.message === "fetch failed" ||
+      error.cause?.code === "UND_ERR_CONNECT_TIMEOUT"
+    ) {
+      console.error("🌐 Network error:", error.message);
+      throw new Error(
+        "Tidak dapat terhubung ke Fonnte API. Periksa koneksi internet Anda."
+      );
     }
 
     console.error("💥 Fonnte notification error:", error.message);

@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 export default function RegisterPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
-    name: "",
     email: "",
     password: "",
-    whatsapp: "", // opsional
+    whatsapp: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -34,7 +33,7 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setSuccess("Registrasi berhasil! Silakan login.");
+        setSuccess("🎉 Registrasi berhasil! Redirecting ke login...");
         setTimeout(() => router.push("/login"), 2000);
       } else {
         setError(data.message || "Registrasi gagal");
@@ -47,50 +46,46 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center mb-6">Buat Akun</h1>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-100 p-4">
+      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl">
+        <div className="text-center mb-6">
+          <h1 className="text-3xl font-bold text-gray-800">
+            🐟 Buat Akun Lele
+          </h1>
+          <p className="text-gray-600 mt-2">Daftar sekarang, gratis!</p>
+        </div>
 
         {error && (
-          <div className="bg-red-100 text-red-700 p-3 rounded mb-4">
-            {error}
+          <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">
+            ❌ {error}
           </div>
         )}
         {success && (
-          <div className="bg-green-100 text-green-700 p-3 rounded mb-4">
-            {success}
+          <div className="bg-green-100 text-green-700 p-3 rounded-lg mb-4 text-sm">
+            ✅ {success}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Nama Lengkap *
+            <label className="block text-sm font-medium mb-2 text-gray-700">
+              📧 Email *
             </label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              className="w-full px-3 py-2 border rounded"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Email *</label>
             <input
               type="email"
               name="email"
               value={formData.email}
               onChange={handleChange}
               required
-              className="w-full px-3 py-2 border rounded"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              placeholder="lele@example.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Password *</label>
+            <label className="block text-sm font-medium mb-2 text-gray-700">
+              🔒 Password *
+            </label>
             <input
               type="password"
               name="password"
@@ -98,13 +93,14 @@ export default function RegisterPage() {
               onChange={handleChange}
               required
               minLength={6}
-              className="w-full px-3 py-2 border rounded"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              placeholder="Minimal 6 karakter"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Nomor WhatsApp (Opsional, untuk login aman)
+            <label className="block text-sm font-medium mb-2 text-gray-700">
+              📱 Nomor WhatsApp
             </label>
             <input
               type="tel"
@@ -112,33 +108,36 @@ export default function RegisterPage() {
               value={formData.whatsapp}
               onChange={handleChange}
               placeholder="081234567890"
-              className="w-full px-3 py-2 border rounded"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Jika diisi, kamu akan verifikasi login via WhatsApp.
+            <p className="text-xs text-gray-500 mt-2 bg-blue-50 p-2 rounded">
+              💡 Isi WhatsApp untuk keamanan extra (verifikasi OTP saat login)
             </p>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className={`w-full py-2 px-4 rounded text-white font-medium ${
-              loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
+            className={`w-full py-3 rounded-lg text-white font-medium transition-all ${
+              loading
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
             }`}
           >
-            {loading ? "Mendaftar..." : "Daftar"}
+            {loading ? "⏳ Mendaftar..." : "🚀 Daftar Sekarang"}
           </button>
         </form>
 
-        <p className="text-center mt-4 text-gray-600">
-          Sudah punya akun?{" "}
+        {/* Link ke Login */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <p className="text-center text-gray-600">Udah punya akun le? 🤔</p>
           <button
             onClick={() => router.push("/login")}
-            className="text-blue-600 hover:underline"
+            className="w-full mt-3 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all"
           >
-            Login di sini
+            🔐 Login di sini!
           </button>
-        </p>
+        </div>
       </div>
     </div>
   );

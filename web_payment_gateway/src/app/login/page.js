@@ -97,20 +97,25 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center mb-6">
-          {step === 1 ? "Login" : "Verifikasi OTP"}
-        </h1>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl">
+        <div className="text-center mb-6">
+          <h1 className="text-3xl font-bold text-gray-800">
+            {step === 1 ? "🐟 Login IkanLele" : "🔐 Verifikasi OTP"}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {step === 1 ? "Masuk ke akun kamu le!" : "Masukkan kode OTP"}
+          </p>
+        </div>
 
         {success && (
-          <div className="bg-green-100 text-green-700 p-3 rounded mb-4 text-sm">
-            {success}
+          <div className="bg-green-100 text-green-700 p-3 rounded-lg mb-4 text-sm">
+            ✅ {success}
           </div>
         )}
         {error && (
-          <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">
-            {error}
+          <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">
+            ❌ {error}
           </div>
         )}
 
@@ -118,69 +123,82 @@ export default function LoginPage() {
           {step === 1 ? (
             <>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Email *
+                <label className="block text-sm font-medium mb-2 text-gray-700">
+                  📧 Email
                 </label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="user@example.com"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="lele@example.com"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Password *
+                <label className="block text-sm font-medium mb-2 text-gray-700">
+                  🔒 Password
                 </label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="••••••••"
                 />
               </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400"
               >
-                {loading ? "Memproses..." : "Login"}
+                {loading ? "⏳ Memproses..." : "🚀 Login"}
               </button>
             </>
           ) : (
             <>
-              <p className="text-center text-sm">
-                Kode OTP telah dikirim ke {userPhone}
+              <p className="text-center text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+                📱 Kode OTP telah dikirim ke <br />
+                <span className="font-semibold text-blue-600">{userPhone}</span>
               </p>
               <input
                 type="text"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                 maxLength={6}
-                className="w-full px-3 py-2 border rounded text-center text-2xl font-mono"
+                required
+                className="w-full px-4 py-4 border-2 border-gray-300 rounded-lg text-center text-3xl font-mono tracking-widest focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="000000"
               />
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2 bg-green-600 text-white rounded"
+                className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:bg-gray-400"
               >
-                {loading ? "Memverifikasi..." : "Verifikasi"}
+                {loading ? "⏳ Memverifikasi..." : "✅ Verifikasi"}
               </button>
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="w-full text-gray-600"
+                className="w-full py-2 text-gray-600 hover:text-gray-800"
               >
-                ← Kembali
+                ← Kembali ke Login
               </button>
             </>
           )}
         </form>
+
+        {/* Link ke Register */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <p className="text-center text-gray-600">Belum punya akun le? 🤔</p>
+          <button
+            onClick={() => router.push("/register")}
+            className="w-full mt-3 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-600 hover:to-purple-700 transition-all"
+          >
+            🐟 Ayo bikin dulu!
+          </button>
+        </div>
       </div>
     </div>
   );
